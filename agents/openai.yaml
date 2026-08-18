@@ -1,0 +1,4 @@
+interface:
+  display_name: "PurpleMark Local API"
+  short_description: "管理本机 PurpleMark 浏览器环境、代理及自动化连接"
+  default_prompt: "使用 $purplemark-local-api 管理本机 PurpleMark 环境、环境分组、代理和代理分组。"
