@@ -1,5 +1,5 @@
 ---
-name: purplemark-local-api
+name: purplemark-skill
 description: 使用 PurpleMark 本地 API 管理浏览器环境、环境分组、代理和代理分组，并启动、停止或查询环境状态。适用于用户要求自动化操作本机 PurpleMark 应用、获取浏览器调试连接或维护本机代理配置时。
 ---
 
