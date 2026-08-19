@@ -1,59 +1,74 @@
 ---
 name: purplemark-skill
-description: 使用 PurpleMark 本地 API 管理浏览器环境、环境分组、代理和代理分组，并启动、停止或查询环境状态。适用于用户要求自动化操作本机 PurpleMark 应用、获取浏览器调试连接或维护本机代理配置时。
+description: 使用 PurpleMark 桌面端本地 API 管理浏览器环境、环境分组与代理；适用于查询、创建、启动、停止或删除本机 PurpleMark 对象，或获取自动化调试连接。
 ---
 
 # PurpleMark Local API
 
-通过 `http://127.0.0.1:39520` 调用正在运行的 PurpleMark 桌面应用。此 API 只监听本机回环地址；先确认应用已启动并完成登录。
+通过 `scripts/local_api.py` 操作 PurpleMark 桌面端。调用必须可复现，且不得暴露 Local API Key。
 
-## 操作流程
+## 前提条件
 
-1. 先运行健康检查：
+1. 必须与 PurpleMark 桌面端运行在同一台机器；Local API 仅监听回环地址。
+2. 确认桌面端已启动，并登录到正确的账号或团队。
+3. 认证接口从环境变量 `PURPLEMARK_API_KEY` 读取 Key。仅将其作为当前进程的临时环境变量使用，绝不在聊天、命令参数、文件或仓库中明文记录。
+4. Local API 根地址默认是 `http://127.0.0.1:39520`；如需覆盖，使用 `PURPLEMARK_LOCAL_API_URL`，且只能指向回环地址。
+
+## 工作流
+
+1. 首次操作前运行健康检查：
 
    ```powershell
-   python scripts/local_api.py /api/v1/healthz
+   python scripts/local_api.py health
    ```
 
-2. 如果返回 `401`，要求用户在应用的本地 API 设置中提供 API Key，并通过环境变量传入，避免将密钥写入命令历史、文件或回复：
+2. 按任务读取 [references/local-api.md](references/local-api.md) 中对应的章节。较长的参考文档应按端点或标题搜索，而非全部加载：
 
    ```powershell
-   $env:PURPLEMARK_API_KEY = '<api-key>'
+   rg -n "profile/start|^## 浏览器环境" references/local-api.md
    ```
 
-3. 对现有对象先执行列表或状态查询，确认目标 ID 后再变更。环境优先使用 `profile_id`；代理使用 `proxy_no`；环境分组使用 `group_id`；代理分组使用 `group_no`。
+3. 环境运行状态操作优先使用快捷命令；其他接口使用 `request` 子命令。
+4. 同时检查 HTTP 状态、`code`、`msg` 和 `data`。非 2xx HTTP 状态或非零 `code` 均视为失败。
+5. 对现有对象，先执行列表或状态查询，确认标识后再变更。环境可使用 `profile_id` 或 `profile_no`；环境分组使用 `group_id`；代理和代理分组分别使用 `proxy_no`、`group_no`。
+6. 结果中不得回显 API Key、Authorization 头、完整 Cookie 或代理密码。
 
-4. 仅在用户明确授权时创建、更新、停止或删除。删除环境前，确认其 ID；运行中的环境由删除接口自动停止。
+## 环境运行快捷命令
 
-5. 启动环境后，从响应的 `ws.puppeteer`、`ws.selenium` 或 `debug_port` 取得自动化连接信息。不要猜测或自行拼接调试端口。
-
-## 调用方式
-
-使用随附脚本发送 JSON 请求。它默认读取以下环境变量：
-
-- `PURPLEMARK_LOCAL_API_URL`：API 根地址，默认 `http://127.0.0.1:39520`
-- `PURPLEMARK_API_KEY`：可选的本地 API Key
-
-GET 示例：
+每次仅提供一个环境标识：`--profile-id` 或 `--profile-no`。
 
 ```powershell
-python scripts/local_api.py "/api/v1/profile/list?page=1&page_size=20"
+# 启动环境
+python scripts/local_api.py profile-start --profile-no 7
+
+# 查询环境状态
+python scripts/local_api.py profile-status --profile-id "<profile-id>"
+
+# 停止环境
+python scripts/local_api.py profile-stop --profile-no 7
 ```
 
-POST 示例：
+启动成功后，直接使用响应中的 `data.ws.puppeteer` 作为 Puppeteer 的 `browserWSEndpoint`，使用 `data.ws.selenium` 作为 Selenium 的调试地址。也可读取返回的 `debug_port`、`webdriver` 或 `webdriver_info`；不得自行猜测或拼接连接地址。
+
+## 通用请求
+
+`request` 只允许访问 `/api/v1/` 下的路径，查询参数必须使用重复的 `--query` 传入。长请求体、含敏感字段的请求体，或 PowerShell 中容易产生转义歧义的 JSON，必须使用 UTF-8 JSON 文件；临时文件存放在 `/temp` 下，并在操作后清理。
 
 ```powershell
-python scripts/local_api.py /api/v1/profile/start --method POST --data '{"profile_id":"<profile-id>"}'
+# 列出环境
+python scripts/local_api.py request GET /api/v1/profile/list --query page=1 --query page_size=20
+
+# 列出代理
+python scripts/local_api.py request GET /api/v1/proxy/list --query page=1 --query page_size=20
+
+# 从 JSON 文件创建环境
+python scripts/local_api.py request POST /api/v1/profile/create --json-file /temp/profile-create.json
 ```
 
-对于复杂请求，将 JSON 放入临时文件并用 `--data-file` 传入；不要把账号、Cookie、代理密码或 API Key 提交到仓库。
+## 安全与错误处理
 
-## 常用任务
-
-- 环境和环境分组：读取 [references/local-api.md](references/local-api.md) 的“环境”部分。
-- 代理和代理分组：读取 [references/local-api.md](references/local-api.md) 的“代理”部分。
-- 参数、返回结构、错误码和完整示例：读取 [references/local-api.md](references/local-api.md)。
-
-## 结果处理
-
-将 HTTP 成功和业务成功分开判断：响应中的 `code: 0` 才表示操作成功。遇到 `401` 时处理 API Key；遇到 `400` 时核对字段与对象标识；遇到 `404` 时核对路径、方法和本机应用是否已启动。脚本会保留服务返回的 JSON 并在失败时以非零状态退出。
+- 创建、更新、启动、停止和删除均须有用户明确授权。删除操作前确认确切的 ID 或编号，不得仅凭名称推断目标。
+- 不要将 API Key 传给非回环地址，也不要通过 `--json`、`--query`、用户文件或输出传递或记录它。
+- `401`：检查当前进程是否设置了 `PURPLEMARK_API_KEY`，但不要要求用户在聊天中粘贴 Key。
+- `400`：核对请求字段和对象标识；`404`：核对路径、方法、目标 ID 与桌面端运行状态。
+- 连接失败：请用户启动或重启 PurpleMark 桌面端。其他失败：概述操作和返回的错误码，不泄露敏感数据。
